@@ -53,9 +53,15 @@ Mesh* Crayfish::loadMesh(const QString& meshFile, LoadStatus* status)
 
   if (meshFile.endsWith(".nc"))
   {
+      // try UGRID
       Mesh* m = loadUGRID(meshFile, status);
       if (!m) {
-          // error, try UGRID
+          // error, try 3di Water Management
+          if (status) status->clear();
+          m = load3di(meshFile, status);
+      }
+      if (!m) {
+          // error, try regular GDAL reader
           if (status) status->clear();
           m = loadNetCDF(meshFile, status);
       }

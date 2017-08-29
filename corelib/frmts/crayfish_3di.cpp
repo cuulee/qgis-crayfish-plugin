@@ -72,12 +72,14 @@ static QMap<QString, QString> initHumanReadableNamesMap() {
 }
 static QMap<QString, QString> STANDARD_NAMES_TO_HUMAN_READABLE_NAMES = initHumanReadableNamesMap();
 
+/*
 struct Edge {
     size_t node_1;
     size_t node_2;
 };
+*/
 
-QStringList initIgnoreVariables() {
+static QStringList initIgnoreVariables() {
     QStringList ignore_variables;
     ignore_variables.append("projected_coordinate_system");
     ignore_variables.append("time");
@@ -109,40 +111,68 @@ QStringList initIgnoreVariables() {
 static QStringList IGNORE_VARIABLES = initIgnoreVariables();
 
 
-struct Dimensions {
+struct Dimensions2 {
     void read(const NetCDFFile& ncFile) {
-        ncFile.getDimension("nmesh2d_node", &nNodes2D, &ncid_node2D);
-        ncFile.getDimension("nmesh2d_face", &nElements2D, &ncid_element2D);
-        ncFile.getDimension("nmesh2d_edge", &nEdges2D, &ncid_edge2D);
-        ncFile.getDimension("time", &nTimesteps, &ncid_timestep);
-
-        // these are not required
-        ncFile.getDimensionOptional("nmesh1d_node", &nNodes1D, &ncid_node1D);
-        ncFile.getDimensionOptional("nmesh1d_edge", &nEdges1D, &ncid_edge1D);
-
-        nNodes = nNodes1D + nNodes2D;
-        nElements = nEdges1D + nElements2D;
+        ncFile.getDimension("nFlowElem", &nFlowElem, &ncid_nFlowElem);
+        ncFile.getDimension("nFlowLine", &nFlowLine, &ncid_nFlowLine);
+        ncFile.getDimension("mapcounter", &mapcounter, &ncid_mapcounter);
+        ncFile.getDimension("nFlowElemContourPts", &nFlowElemContourPts, &ncid_nFlowElemContourPts);
+        ncFile.getDimension("nFlowLinePts", &nFlowLinePts, &ncid_nFlowLinePts);
+        ncFile.getDimension("nFlowElem1D", &nFlowElem1D, &ncid_nFlowElem1D);
+        ncFile.getDimension("nFlowElem1DAll", &nFlowElem1DAll, &ncid_nFlowElem1DAll);
+        ncFile.getDimension("inputnodes", &inputnodes, &ncid_inputnodes);
+        ncFile.getDimension("nFlowElem2D", &nFlowElem2D, &ncid_nFlowElem2D);
+        ncFile.getDimension("nFlowElem2DAll", &nFlowElem2DAll, &ncid_nFlowElem2DAll);
+        ncFile.getDimension("nFlowLine2D", &nFlowLine2D, &ncid_nFlowLine2D);
+        ncFile.getDimension("nFlowLine1D", &nFlowLine1D, &ncid_nFlowLine1D);
+        ncFile.getDimension("nFlowLine1D2D", &nFlowLine1D2D, &ncid_nFlowLine1D2D);
+        ncFile.getDimension("nPumps", &nPumps, &ncid_nPumps);
+        ncFile.getDimension("time", &nTimesteps, &ncid_nTimesteps);
     }
 
-    int ncid_node1D;
-    size_t nNodes1D;
+    int ncid_nFlowElem;
+    size_t nFlowElem;
 
-    int ncid_edge1D;
-    size_t nEdges1D;
+    int ncid_nFlowLine;
+    size_t nFlowLine;
 
-    int ncid_node2D;
-    size_t nNodes2D;
+    int ncid_mapcounter;
+    size_t mapcounter;
 
-    int ncid_element2D;
-    size_t nElements2D;
+    int ncid_nFlowElemContourPts;
+    size_t nFlowElemContourPts;
 
-    int ncid_edge2D;
-    size_t nEdges2D;
+    int ncid_nFlowLinePts;
+    size_t nFlowLinePts;
 
-    size_t nNodes;
-    size_t nElements;
+    int ncid_nFlowElem1D;
+    size_t nFlowElem1D;
 
-    int ncid_timestep;
+    int ncid_nFlowElem1DAll;
+    size_t nFlowElem1DAll;
+
+    int ncid_inputnodes;
+    size_t inputnodes;
+
+    int ncid_nFlowElem2D;
+    size_t nFlowElem2D;
+
+    int ncid_nFlowElem2DAll;
+    size_t nFlowElem2DAll;
+
+    int ncid_nFlowLine2D;
+    size_t nFlowLine2D;
+
+    int ncid_nFlowLine1D;
+    size_t nFlowLine1D;
+
+    int ncid_nFlowLine1D2D;
+    size_t nFlowLine1D2D;
+
+    int ncid_nPumps;
+    size_t nPumps;
+
+    int ncid_nTimesteps;
     size_t nTimesteps;
 };
 
@@ -158,74 +188,37 @@ struct DatasetInfo{
 typedef QMap<QString, DatasetInfo> dataset_info_map; // name -> DatasetInfo
 
 ////////////////////////////////////////////////////////////////
-static QString getCoordinateSystemVariableName(const NetCDFFile& ncFile) {
-    QString coordinate_system_variable;
-
-    // first try to get the coordinate system variable from grid definition
-    if (ncFile.hasVariable("mesh2d_node_z")) {
-        coordinate_system_variable = ncFile.getAttrStr("mesh2d_node_z", "grid_mapping");
-    }
-
-    // if automatic discovery fails, try to check some hardcoded common variables that store projection
-    if (coordinate_system_variable.isEmpty()) {
-        if (ncFile.hasVariable("projected_coordinate_system"))
-            coordinate_system_variable = "projected_coordinate_system";
-        else if (ncFile.hasVariable("wgs84"))
-            coordinate_system_variable = "wgs84";
-    }
-
-    // return, may be empty
-    return coordinate_system_variable;
-}
-
 static void setProjection(Mesh* m, const NetCDFFile& ncFile) {
-    QString coordinate_system_variable = getCoordinateSystemVariableName(ncFile);
-
-    if (!coordinate_system_variable.isEmpty()) {
-        QString wkt = ncFile.getAttrStr(coordinate_system_variable, "wkt");
-        if (wkt.isEmpty()) {
-            int epsg = ncFile.getAttrInt(coordinate_system_variable, "epsg");
-            if (epsg != 0) {
-                m->setSourceCrsFromEPSG(epsg);
-            }
-        } else {
-            m->setSourceCrsFromWKT(wkt);
+    if (ncFile.hasVariable("projected_coordinate_system")) {
+        QString coordinate_system_variable("projected_coordinate_system");
+        int epsg = ncFile.getAttrInt(coordinate_system_variable, "epsg");
+        if (epsg != 0) {
+            m->setSourceCrsFromEPSG(epsg);
         }
     }
 }
 
-static Mesh::Nodes createNodes(const Dimensions& dims, const NetCDFFile& ncFile) {
-    Mesh::Nodes nodes(dims.nNodes);
+static Mesh::Nodes createNodes(const Dimensions2& dims, const NetCDFFile& ncFile) {
+    Mesh::Nodes nodes(dims.nFlowElem);
     Node* nodesPtr = nodes.data();
 
-    // 1D
-    if (dims.nNodes1D > 0) {
-        QVector<double> nodes1D_x = ncFile.readDoubleArr("mesh1d_node_x", dims.nNodes1D);
-        QVector<double> nodes1D_y = ncFile.readDoubleArr("mesh1d_node_y", dims.nNodes1D);
-        for (size_t i = 0; i < dims.nNodes1D; ++i, ++nodesPtr)
-        {
-            nodesPtr->setId(i);
-            nodesPtr->x = nodes1D_x[i];
-            nodesPtr->y = nodes1D_y[i];
-        }
-    }
-
     // 2D
-    QVector<double> nodes2D_x = ncFile.readDoubleArr("mesh2d_node_x", dims.nNodes2D);
-    QVector<double> nodes2D_y = ncFile.readDoubleArr("mesh2d_node_y", dims.nNodes2D);
-    for (size_t i = 0; i < dims.nNodes2D; ++i, ++nodesPtr)
+    QVector<double> nodes_x = ncFile.readDoubleArr("FlowElem_xcc", dims.nFlowElem);
+    QVector<double> nodes_y = ncFile.readDoubleArr("FlowElem_ycc", dims.nFlowElem);
+    for (size_t i = 0; i < dims.nFlowElem; ++i, ++nodesPtr)
     {
-        nodesPtr->setId(dims.nNodes1D+i);
-        nodesPtr->x = nodes2D_x[i];
-        nodesPtr->y = nodes2D_y[i];
+        nodesPtr->setId(i);
+        nodesPtr->x = nodes_x[i];
+        nodesPtr->y = nodes_y[i];
     }
     return nodes;
 }
 
-static Mesh::Elements createElements(const Dimensions& dims, const NetCDFFile& ncFile) {
-    Mesh::Elements elements(dims.nElements);
+static Mesh::Elements createElements(const Dimensions2& dims, const NetCDFFile& ncFile) {
+    Mesh::Elements elements(dims.nFlowElem2DAll);
     Element* elementsPtr = elements.data();
 
+#if 0
     // 1D
     if (dims.nEdges1D > 0) {
         int start_index = ncFile.getAttrInt("mesh1d_edge_nodes", "start_index");
@@ -239,19 +232,17 @@ static Mesh::Elements createElements(const Dimensions& dims, const NetCDFFile& n
             elementsPtr->setP(1, edges_nodes_conn[2*i + 1] - start_index);
         }
     }
+#endif
 
     // 2D
-    size_t nMaxVertices;
-    int nMaxVerticesId;
-    ncFile.getDimension("max_nmesh2d_face_nodes", &nMaxVertices, &nMaxVerticesId);
-
+    size_t nMaxVertices = dims.nFlowElemContourPts;
     int fill_val = ncFile.getAttrInt("mesh2d_face_nodes", "_FillValue");
-    int start_index = ncFile.getAttrInt("mesh2d_face_nodes", "start_index") - dims.nNodes1D;
-    QVector<int> face_nodes_conn = ncFile.readIntArr("mesh2d_face_nodes", dims.nElements2D * nMaxVertices);
+    int start_index = 0;
+    QVector<int> face_nodes_conn = ncFile.readIntArr("FlowElemContour_x", dims.nFlowElem2DAll * nMaxVertices);
 
-    for (size_t i = 0; i < dims.nElements2D; ++i, ++elementsPtr)
+    for (size_t i = 0; i < dims.nFlowElem2DAll; ++i, ++elementsPtr)
     {
-        elementsPtr->setId(dims.nEdges1D + i);
+        elementsPtr->setId(i);
         Element::Type et = Element::ENP;
         int nVertices = nMaxVertices;
         QVector<uint> idxs(nMaxVertices);
@@ -283,14 +274,15 @@ static Mesh::Elements createElements(const Dimensions& dims, const NetCDFFile& n
     return elements;
 }
 
-static Mesh* createMesh(const Dimensions& dims, const NetCDFFile& ncFile) {
+static Mesh* createMesh(const Dimensions2& dims, const NetCDFFile& ncFile) {
     Mesh::Nodes nodes = createNodes(dims, ncFile);
     Mesh::Elements elements = createElements(dims, ncFile);
     Mesh* m = new Mesh(nodes, elements);
     return m;
 }
 
-static bool output_array_type(const Dimensions& dims, int ncid_dimid, size_t& n_items, QString& output_type) {
+#if 0
+static bool output_array_type(const Dimensions2& dims, int ncid_dimid, size_t& n_items, QString& output_type) {
     bool ret = true;
 
     if (ncid_dimid == dims.ncid_node1D) {
@@ -315,7 +307,7 @@ static bool output_array_type(const Dimensions& dims, int ncid_dimid, size_t& n_
     return ret;
 }
 
-static dataset_info_map parseDatasetInfo(const Dimensions& dims, const NetCDFFile& ncFile) {
+static dataset_info_map parseDatasetInfo(const Dimensions2& dims, const NetCDFFile& ncFile) {
     /*
      * list of datasets:
      *   Getting the full list of variables from the file and then grouping them in two steps:
@@ -461,7 +453,7 @@ static void populate_nodata(bool is_vector, QVector<float>& vals, QVector<Output
     }
 }
 
-static Output* createNode1DOutput(size_t ts, const Dimensions& dims, const DatasetInfo& dsi, const QVector<double>& vals_x, const QVector<double>& vals_y, double fill_val_x, double fill_val_y) {
+static Output* createNode1DOutput(size_t ts, const Dimensions2& dims, const DatasetInfo& dsi, const QVector<double>& vals_x, const QVector<double>& vals_y, double fill_val_x, double fill_val_y) {
     NodeOutput* el = new NodeOutput();
     el->init(dims.nNodes, dims.nElements, (dsi.dsType == DataSet::Vector));
 
@@ -483,7 +475,7 @@ static Output* createNode1DOutput(size_t ts, const Dimensions& dims, const Datas
     return el;
 }
 
-static Output* createEdge1DOutput(size_t ts, const Dimensions& dims, const DatasetInfo& dsi, const QVector<double>& vals_x, const QVector<double>& vals_y, double fill_val_x, double fill_val_y) {
+static Output* createEdge1DOutput(size_t ts, const Dimensions2& dims, const DatasetInfo& dsi, const QVector<double>& vals_x, const QVector<double>& vals_y, double fill_val_x, double fill_val_y) {
     ElementOutput* el = new ElementOutput();
     el->init(dims.nElements, (dsi.dsType == DataSet::Vector));
 
@@ -501,7 +493,7 @@ static Output* createEdge1DOutput(size_t ts, const Dimensions& dims, const Datas
     return el;
 }
 
-static Output* createNode2DOutput(size_t ts, const Dimensions& dims, const DatasetInfo& dsi, const QVector<double>& vals_x, const QVector<double>& vals_y, double fill_val_x, double fill_val_y) {
+static Output* createNode2DOutput(size_t ts, const Dimensions2& dims, const DatasetInfo& dsi, const QVector<double>& vals_x, const QVector<double>& vals_y, double fill_val_x, double fill_val_y) {
     NodeOutput* el = new NodeOutput();
     el->init(dims.nNodes, dims.nElements, (dsi.dsType == DataSet::Vector));
 
@@ -523,7 +515,7 @@ static Output* createNode2DOutput(size_t ts, const Dimensions& dims, const Datas
     return el;
 }
 
-static Output* createEdge2DOutput(const QVector<Edge>& edges, size_t ts, const Dimensions& dims, const DatasetInfo& dsi, const QVector<double>& vals_x, const QVector<double>& vals_y, double fill_val_x, double fill_val_y) {
+static Output* createEdge2DOutput(const QVector<Edge>& edges, size_t ts, const Dimensions2& dims, const DatasetInfo& dsi, const QVector<double>& vals_x, const QVector<double>& vals_y, double fill_val_x, double fill_val_y) {
     NodeOutput* el = new NodeOutput();
     el->init(dims.nNodes, dims.nElements, (dsi.dsType == DataSet::Vector));
 
@@ -574,7 +566,7 @@ static Output* createEdge2DOutput(const QVector<Edge>& edges, size_t ts, const D
     return el;
 }
 
-static Output* createElement2DOutput(size_t ts, const Dimensions& dims, const DatasetInfo& dsi, const QVector<double>& vals_x, const QVector<double>& vals_y, double fill_val_x, double fill_val_y) {
+static Output* createElement2DOutput(size_t ts, const Dimensions2& dims, const DatasetInfo& dsi, const QVector<double>& vals_x, const QVector<double>& vals_y, double fill_val_x, double fill_val_y) {
     ElementOutput* el = new ElementOutput();
     el->init(dims.nElements, (dsi.dsType == DataSet::Vector));
 
@@ -591,7 +583,7 @@ static Output* createElement2DOutput(size_t ts, const Dimensions& dims, const Da
     return el;
 }
 
-static void addDatasets(Mesh* m, const Dimensions& dims, const NetCDFFile& ncFile,
+static void addDatasets(Mesh* m, const Dimensions2& dims, const NetCDFFile& ncFile,
                         const QString& fileName, const QVector<double>& times,
                         const dataset_info_map& dsinfo_map,
                         const QDateTime& refTime,
@@ -653,7 +645,7 @@ static void addDatasets(Mesh* m, const Dimensions& dims, const NetCDFFile& ncFil
     }
 }
 
-static QDateTime parseTime(const NetCDFFile& ncFile, const Dimensions& dims, QVector<double>& times) {
+static QDateTime parseTime(const NetCDFFile& ncFile, const Dimensions2& dims, QVector<double>& times) {
     QDateTime dt;
 
     times = ncFile.readDoubleArr("time", dims.nTimesteps);
@@ -689,7 +681,7 @@ static QDateTime parseTime(const NetCDFFile& ncFile, const Dimensions& dims, QVe
     return dt;
 }
 
-static QVector<Edge> parseEdges(const Dimensions& dims, const NetCDFFile& ncFile) {
+static QVector<Edge> parseEdges(const Dimensions2& dims, const NetCDFFile& ncFile) {
     int start_index = ncFile.getAttrInt("mesh2d_edge_nodes", "start_index") - dims.nNodes1D;
     QVector<int> edge_nodes_conn = ncFile.readIntArr("mesh2d_edge_nodes", dims.nEdges2D * 2);
 
@@ -704,12 +696,14 @@ static QVector<Edge> parseEdges(const Dimensions& dims, const NetCDFFile& ncFile
     return edges;
 }
 
-Mesh* Crayfish::loadUGRID(const QString& fileName, LoadStatus* status)
+#endif
+
+Mesh* Crayfish::load3di(const QString& fileName, LoadStatus* status)
 {
     if (status) status->clear();
     NetCDFFile ncFile;
     Mesh* mesh = 0;
-    Dimensions dims;
+    Dimensions2 dims;
     QVector<double> times;
 
     try
@@ -723,6 +717,7 @@ Mesh* Crayfish::loadUGRID(const QString& fileName, LoadStatus* status)
         mesh = createMesh(dims, ncFile);
         setProjection(mesh, ncFile);
 
+#if 0
         // Parse Edges
         QVector<Edge> edges;
         edges = parseEdges(dims, ncFile);
@@ -735,6 +730,7 @@ Mesh* Crayfish::loadUGRID(const QString& fileName, LoadStatus* status)
 
         // Create datasets
         addDatasets(mesh, dims, ncFile, fileName, times, dsinfo_map, refTime, edges);
+#endif
     }
     catch (LoadStatus::Error error)
     {
